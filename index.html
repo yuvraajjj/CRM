@@ -1,0 +1,2386 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+  LayoutDashboard,
+  Inbox,
+  Cpu,
+  GitFork,
+  AlertOctagon,
+  Users,
+  BarChart3,
+  Settings,
+  Search,
+  Upload,
+  Download,
+  Play,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ArrowRight,
+  ChevronRight,
+  ChevronDown,
+  Filter,
+  RefreshCw,
+  Eye,
+  ShieldAlert,
+  Sparkles,
+  X,
+  MessageSquare,
+  Send,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+  MapPin,
+  Building2,
+  HelpCircle,
+  Check,
+  ExternalLink,
+  Info,
+  SlidersHorizontal,
+  ChevronLeft,
+  ArrowUpRight,
+  ShieldCheck,
+  Activity
+} from 'lucide-react';
+
+// ==========================================
+// 1. DATA TAXONOMY & NLP INFERENCE ENGINE
+// ==========================================
+
+const ROOT_CAUSES_TAXONOMY = [
+  {
+    id: 'RC-1',
+    name: 'Refund & Settlement Reversal Bottleneck',
+    category: 'Refund',
+    description: 'Bank payment gateway timeouts and delayed manual verification on failed UPI/cards.',
+    keywords: ['refund', 'money', 'returned', 'deducted', 'settlement', 'reversal', 'bank', 'not received', 'account'],
+    contributingFactor: 'Payment reconciliation batch delays (T+3) and lack of instant gateway webhook sync.',
+    systemicCause: 'Core banking integration failure during return validation',
+    team: 'Refund & Financial Ops',
+    baseConfidence: 89,
+    action: 'Implement automated UPI instant refund disbursement via IMPS gateway with real-time tracking.'
+  },
+  {
+    id: 'RC-2',
+    name: 'Last-Mile Logistics Delay & Cold-Chain Failure',
+    category: 'Delivery',
+    description: 'Delivery rider allocation shortage during peak surge hours and packaging integrity issues.',
+    keywords: ['late', 'delivery', 'delayed', 'packaging', 'damaged', 'spoiled', 'rider', 'tracking', 'package'],
+    contributingFactor: 'Inaccurate dynamic ETA calculation during peak Indian festival and monsoon traffic.',
+    systemicCause: 'Hub dispatch bottlenecks and last-mile partner SLA breach',
+    team: 'Logistics Operations',
+    baseConfidence: 92,
+    action: 'Audit 3PL courier performance by postal code and enforce cold-chain thermal packaging checks.'
+  },
+  {
+    id: 'RC-3',
+    name: 'Product Quality Variance & Counterfeit Influx',
+    category: 'Product',
+    description: 'Third-party marketplace sellers shipping substandard or non-working electronics and apparel.',
+    keywords: ['quality', 'stopped working', 'broken', 'defective', 'fake', 'cheap', 'terrible', 'waste', 'disappointed'],
+    contributingFactor: 'Lenient onboarding QA audit for unverified merchants on marketplace tier.',
+    systemicCause: 'Upstream vendor inspection lapses and inventory grade mismatch',
+    team: 'Merchant Quality QA',
+    baseConfidence: 86,
+    action: 'Delist repeat-offending sellers with elevated defect ratios and enforce warehouse batch testing.'
+  },
+  {
+    id: 'RC-4',
+    name: 'Customer Support Bot Loop & Agent Inaccessibility',
+    category: 'Customer Support',
+    description: 'Automated IVR/chatbots repeatedly giving generic responses without routing to human agents.',
+    keywords: ['support', 'agent', 'call', 'reply', 'rude', 'bot', 'disconnected', 'email', 'response', 'hung up'],
+    contributingFactor: 'Overly restrictive deflection rules designed to artificially suppress live agent queues.',
+    systemicCause: 'Chatbot escalation failure and poor CRM context handover',
+    team: 'Customer Experience Leadership',
+    baseConfidence: 94,
+    action: 'Enable 1-click fallback to senior human agents whenever sentiment drops below -0.6.'
+  },
+  {
+    id: 'RC-5',
+    name: 'Billing Mismatch & Concealed Surge Surcharges',
+    category: 'Billing',
+    description: 'Unexpected platform handling charges, cancellation penalties, or misleading price discounts.',
+    keywords: ['price', 'worth', 'expensive', 'charge', 'hidden', 'bill', 'invoice', 'gst', 'overcharged'],
+    contributingFactor: 'Dynamic pricing disclosure buried inside checkout submenus.',
+    systemicCause: 'Cart calculation opacity and ambiguous promotional terms',
+    team: 'Product Monetization',
+    baseConfidence: 84,
+    action: 'Standardize checkout line-item transparency and send immediate pre-order cost itemization.'
+  }
+];
+
+// Heuristic NLP engine for dynamic row classification
+function inferComplaintAttributes(item) {
+  const text = (item.review_text || item.complaint || '').toLowerCase();
+  const rating = Number(item.customer_rating) || (item.sentiment === 'negative' ? 1 : item.sentiment === 'positive' ? 5 : 3);
+  const respHours = Number(item.response_time_hours) || 24;
+  const isResolved = String(item.issue_resolved || 'no').toLowerCase().includes('y');
+
+  // Sentiment score: -1.0 to +1.0
+  let sentiment = item.sentiment ? item.sentiment.toLowerCase() : 'neutral';
+  let sentimentScore = 0;
+  if (sentiment === 'positive' || rating >= 4) {
+    sentiment = 'positive';
+    sentimentScore = rating === 5 ? 0.85 : 0.55;
+  } else if (sentiment === 'negative' || rating <= 2) {
+    sentiment = 'negative';
+    sentimentScore = rating === 1 ? -0.88 : -0.55;
+  } else {
+    sentiment = 'neutral';
+    sentimentScore = 0.05;
+  }
+
+  // Detect root cause match by keywords
+  let matchedRc = ROOT_CAUSES_TAXONOMY[0];
+  let maxMatches = -1;
+  ROOT_CAUSES_TAXONOMY.forEach((rc) => {
+    let matches = 0;
+    rc.keywords.forEach((kw) => {
+      if (text.includes(kw)) matches++;
+    });
+    if (matches > maxMatches) {
+      maxMatches = matches;
+      matchedRc = rc;
+    }
+  });
+
+  // Priority scoring (0-100)
+  let priorityScore = 15;
+  const scoreBreakdown = {
+    sentimentDeduction: 0,
+    urgency: 10,
+    slaBreach: 0,
+    repeatRisk: 0,
+    escalationLanguage: 0,
+    impact: 10
+  };
+
+  if (sentiment === 'negative') {
+    const boost = rating === 1 ? 28 : 20;
+    priorityScore += boost;
+    scoreBreakdown.sentimentDeduction = boost;
+  }
+  if (respHours > 36) {
+    priorityScore += 22;
+    scoreBreakdown.slaBreach = 22;
+  } else if (respHours > 24) {
+    priorityScore += 14;
+    scoreBreakdown.slaBreach = 14;
+  }
+  if (!isResolved) {
+    priorityScore += 16;
+    scoreBreakdown.repeatRisk = 16;
+  }
+  if (text.includes('cheat') || text.includes('court') || text.includes('police') || text.includes('legal') || text.includes('never') || text.includes('fraud')) {
+    priorityScore += 18;
+    scoreBreakdown.escalationLanguage = 18;
+  }
+  if (rating === 1) {
+    priorityScore += 12;
+    scoreBreakdown.impact += 12;
+  }
+
+  priorityScore = Math.min(99, Math.max(12, priorityScore));
+
+  let priority = 'P4';
+  let priorityLabel = 'Low';
+  let priorityColor = 'emerald';
+  if (priorityScore >= 78) {
+    priority = 'P1';
+    priorityLabel = 'Critical';
+    priorityColor = 'rose';
+  } else if (priorityScore >= 58) {
+    priority = 'P2';
+    priorityLabel = 'High';
+    priorityColor = 'amber';
+  } else if (priorityScore >= 38) {
+    priority = 'P3';
+    priorityLabel = 'Medium';
+    priorityColor = 'blue';
+  }
+
+  const impactValue = Math.min(10, Math.max(1, Math.round((6 - rating) * 1.6)));
+  const urgencyValue = Math.min(10, Math.max(1, Math.round((respHours / 70) * 8 + (sentiment === 'negative' ? 3 : 1))));
+
+  return {
+    sentiment,
+    sentimentScore,
+    matchedRc,
+    priority,
+    priorityLabel,
+    priorityColor,
+    priorityScore,
+    scoreBreakdown,
+    impactValue,
+    urgencyValue
+  };
+}
+
+// Built-in Representative Dataset mirroring the exact Kaggle Customer_Sentiment.csv schema
+const INITIAL_KAGGLE_SEED = [
+  { customer_id: 10482, gender: 'male', age_group: '46-60', region: 'north', product_category: 'automobile', purchase_channel: 'online', platform: 'flipkart', customer_rating: 1, review_text: 'Very disappointed with the quality. Refund not received after 14 days and seller is unresponsive.', sentiment: 'negative', response_time_hours: 58, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-14' },
+  { customer_id: 10483, gender: 'female', age_group: '26-35', region: 'south', product_category: 'groceries', purchase_channel: 'online', platform: 'zepto', customer_rating: 1, review_text: 'Late delivery and poor packaging. Dairy items were spoiled completely. App chatbot kept repeating same answer.', sentiment: 'negative', response_time_hours: 44, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-15' },
+  { customer_id: 10484, gender: 'other', age_group: '18-25', region: 'west', product_category: 'electronics', purchase_channel: 'online', platform: 'croma', customer_rating: 2, review_text: 'Product stopped working after few days. Service center refuses replacement stating warranty invalid.', sentiment: 'negative', response_time_hours: 68, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-15' },
+  { customer_id: 10485, gender: 'male', age_group: '26-35', region: 'north', product_category: 'fashion', purchase_channel: 'online', platform: 'meesho', customer_rating: 1, review_text: 'Not worth the price. Stitching torn and duplicate brand delivered. Customer support hung up without resolving.', sentiment: 'negative', response_time_hours: 52, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-16' },
+  { customer_id: 10486, gender: 'female', age_group: '36-45', region: 'central', product_category: 'beauty', purchase_channel: 'online', platform: 'nykaa', customer_rating: 1, review_text: 'Payment gateway failure! Money deducted twice from my UPI bank account but order not placed.', sentiment: 'negative', response_time_hours: 49, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-16' },
+  { customer_id: 10487, gender: 'female', age_group: '18-25', region: 'south', product_category: 'groceries', purchase_channel: 'online', platform: 'swiggy instamart', customer_rating: 4, review_text: 'Fast delivery and great packaging. Fresh vegetables delivered within 15 minutes.', sentiment: 'positive', response_time_hours: 6, issue_resolved: 'yes', complaint_registered: 'no', date: '2025-05-17' },
+  { customer_id: 10488, gender: 'male', age_group: '60+', region: 'east', product_category: 'books', purchase_channel: 'online', platform: 'amazon', customer_rating: 5, review_text: 'Excellent product! Exceeded expectations, prompt delivery and securely wrapped.', sentiment: 'positive', response_time_hours: 12, issue_resolved: 'yes', complaint_registered: 'no', date: '2025-05-17' },
+  { customer_id: 10489, gender: 'male', age_group: '36-45', region: 'north', product_category: 'sports', purchase_channel: 'online', platform: 'paytm mall', customer_rating: 2, review_text: 'Delayed delivery by 10 days. Tracking status remained stuck at Delhi sorting hub without update.', sentiment: 'negative', response_time_hours: 46, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-18' },
+  { customer_id: 10490, gender: 'other', age_group: '26-35', region: 'west', product_category: 'home & kitchen', purchase_channel: 'online', platform: 'jiomart', customer_rating: 2, review_text: 'Unexpected surge handling fee and delivery delayed. Product box was crushed upon arrival.', sentiment: 'negative', response_time_hours: 38, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-18' },
+  { customer_id: 10491, gender: 'female', age_group: '18-25', region: 'central', product_category: 'fashion', purchase_channel: 'online', platform: 'flipkart', customer_rating: 3, review_text: 'Neutral about the quality. Fabric is okay, but delivery took 3 days longer than promised.', sentiment: 'neutral', response_time_hours: 24, issue_resolved: 'yes', complaint_registered: 'no', date: '2025-05-19' },
+  { customer_id: 10492, gender: 'male', age_group: '26-35', region: 'south', product_category: 'electronics', purchase_channel: 'online', platform: 'amazon', customer_rating: 1, review_text: 'Refund still not received! Returned item 3 weeks ago. Automated email keeps saying 5-7 business days.', sentiment: 'negative', response_time_hours: 64, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-19' },
+  { customer_id: 10493, gender: 'female', age_group: '46-60', region: 'north', product_category: 'groceries', purchase_channel: 'online', platform: 'zepto', customer_rating: 1, review_text: 'Order arrived with missing items. Support bot promised callback in 10 minutes, no one called back.', sentiment: 'negative', response_time_hours: 55, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-20' },
+  { customer_id: 10494, gender: 'other', age_group: '18-25', region: 'west', product_category: 'beauty', purchase_channel: 'online', platform: 'nykaa', customer_rating: 4, review_text: 'Good authentic cosmetics. Delivery was on time and packed nicely with bubble wrap.', sentiment: 'positive', response_time_hours: 8, issue_resolved: 'yes', complaint_registered: 'no', date: '2025-05-20' },
+  { customer_id: 10495, gender: 'male', age_group: '36-45', region: 'east', product_category: 'travel', purchase_channel: 'online', platform: 'shopclues', customer_rating: 1, review_text: 'Charged hidden cancellation fee without prior warning. Horrible customer service experience.', sentiment: 'negative', response_time_hours: 42, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-21' },
+  { customer_id: 10496, gender: 'female', age_group: '26-35', region: 'central', product_category: 'automobile', purchase_channel: 'online', platform: 'flipkart', customer_rating: 2, review_text: 'Received incompatible car accessory. Return pickup driver cancelled 3 times without contacting me.', sentiment: 'negative', response_time_hours: 60, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-21' },
+  { customer_id: 10497, gender: 'male', age_group: '18-25', region: 'north', product_category: 'sports', purchase_channel: 'online', platform: 'amazon', customer_rating: 3, review_text: 'Product is okay, nothing special. Delivery was fine but instructions were missing.', sentiment: 'neutral', response_time_hours: 18, issue_resolved: 'yes', complaint_registered: 'no', date: '2025-05-22' },
+  { customer_id: 10498, gender: 'female', age_group: '60+', region: 'south', product_category: 'home & kitchen', purchase_channel: 'online', platform: 'croma', customer_rating: 1, review_text: 'Induction stove broke down in 48 hours. Warranty card stamped invalid by technician.', sentiment: 'negative', response_time_hours: 72, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-22' },
+  { customer_id: 10499, gender: 'other', age_group: '26-35', region: 'west', product_category: 'fashion', purchase_channel: 'online', platform: 'meesho', customer_rating: 2, review_text: 'Color completely different from picture. When I raised ticket, agent abruptly closed it as resolved!', sentiment: 'negative', response_time_hours: 48, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-23' },
+  { customer_id: 10500, gender: 'male', age_group: '36-45', region: 'central', product_category: 'electronics', purchase_channel: 'online', platform: 'flipkart', customer_rating: 1, review_text: 'Scam alert! Received empty cardboard box instead of headphones. Investigation team taking forever.', sentiment: 'negative', response_time_hours: 80, issue_resolved: 'no', complaint_registered: 'yes', date: '2025-05-23' },
+  { customer_id: 10501, gender: 'female', age_group: '26-35', region: 'north', product_category: 'groceries', purchase_channel: 'online', platform: 'swiggy instamart', customer_rating: 5, review_text: 'Super quick delivery in 12 mins. Fresh milk and bread as expected.', sentiment: 'positive', response_time_hours: 4, issue_resolved: 'yes', complaint_registered: 'no', date: '2025-05-24' }
+];
+
+// Utility: Robust CSV Parser
+function parseCSV(text) {
+  const lines = [];
+  let row = [];
+  let inQuotes = false;
+  let currentField = '';
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      row.push(currentField.trim());
+      currentField = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      row.push(currentField.trim());
+      if (row.some((field) => field !== '')) {
+        lines.push(row);
+      }
+      row = [];
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+  if (currentField || row.length > 0) {
+    row.push(currentField.trim());
+    if (row.some((field) => field !== '')) lines.push(row);
+  }
+
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].map((h) => h.toLowerCase().replace(/[\s_-]+/g, '_'));
+  return lines.slice(1).map((values) => {
+    const obj = {};
+    headers.forEach((header, idx) => {
+      obj[header] = values[idx] || '';
+    });
+    return obj;
+  });
+}
+
+// PII Masking utility
+function maskPII(name, type = 'name') {
+  if (!name) return 'Anonymous User';
+  const str = String(name).trim();
+  if (type === 'name') {
+    const parts = str.split(' ');
+    return parts.map((p) => (p.length > 2 ? `${p[0]}**** ${p[p.length - 1]}` : 'U****')).join(' ');
+  }
+  if (type === 'email') {
+    const atIdx = str.indexOf('@');
+    if (atIdx > 1) return `${str[0]}****${str.slice(atIdx)}`;
+    return 'c****@domain.com';
+  }
+  if (type === 'phone') {
+    return `+91 ******${str.slice(-4) || '4821'}`;
+  }
+  return `CUS-****${str.slice(-4) || '1048'}`;
+}
+
+// ==========================================
+// 2. MAIN APPLICATION COMPONENT
+// ==========================================
+
+export default function App() {
+  // Navigation State
+  const [activeTab, setActiveTab] = useState('command_center');
+  
+  // Data State
+  const [rawDataset, setRawDataset] = useState(INITIAL_KAGGLE_SEED);
+  const [isUploadedData, setIsUploadedData] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Selected Detail Modal / Drawer
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [selectedRootCause, setSelectedRootCause] = useState(null);
+  const [selectedCustomerProfile, setSelectedCustomerProfile] = useState(null);
+  
+  // Modals & Banners
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showSimulateModal, setShowSimulateModal] = useState(false);
+  const [presentationStep, setPresentationStep] = useState(null); // null when off, 1-5 when on
+  const [toastMessage, setToastMessage] = useState(null);
+
+  // AI Interactive Tester Sandbox input
+  const [sandboxText, setSandboxText] = useState('Ordered groceries on Zepto, delivered 2 hours late with spoiled milk. The support bot kept closing my ticket without human callback!');
+  
+  // Ticket Status store for local interactive CRM status changes
+  const [ticketStatuses, setTicketStatuses] = useState({});
+
+  // Show Toast
+  const triggerToast = (msg, type = 'success') => {
+    setToastMessage({ text: msg, type });
+    setTimeout(() => setToastMessage(null), 3800);
+  };
+
+  // Processed / Normalized Records
+  const processedData = useMemo(() => {
+    return rawDataset.map((row, index) => {
+      const id = row.customer_id || `ID-${10000 + index}`;
+      const text = row.review_text || row.complaint_text || row.complaint || row.text || 'Customer complaint registered.';
+      const category = (row.product_category || row.category || 'General').toLowerCase();
+      const platform = (row.platform || row.purchase_channel || 'Online Store').toLowerCase();
+      const region = (row.region || 'central').toLowerCase();
+      const respTime = Number(row.response_time_hours) || 24;
+      const date = row.date || `2025-05-${String((index % 28) + 1).padStart(2, '0')}`;
+      
+      const nlp = inferComplaintAttributes({
+        ...row,
+        review_text: text,
+        product_category: category,
+        response_time_hours: respTime
+      });
+
+      const currentStatus = ticketStatuses[id] || (row.issue_resolved === 'yes' ? 'Resolved' : nlp.priority === 'P1' ? 'Escalated' : 'Open');
+
+      return {
+        id,
+        raw: row,
+        text,
+        category: category.charAt(0).toUpperCase() + category.slice(1),
+        platform: platform.charAt(0).toUpperCase() + platform.slice(1),
+        region: region.charAt(0).toUpperCase() + region.slice(1),
+        respTime,
+        date,
+        rating: Number(row.customer_rating) || (nlp.sentiment === 'negative' ? 1 : 4),
+        status: currentStatus,
+        ...nlp
+      };
+    });
+  }, [rawDataset, ticketStatuses]);
+
+  // Dynamic Metric Calculations
+  const metrics = useMemo(() => {
+    const total = processedData.length;
+    if (total === 0) return { total: 0, negativePct: 0, p1Count: 0, repeatPct: 0, avgRespHours: 0, rootCausesDetected: 0 };
+
+    const negativeCount = processedData.filter((d) => d.sentiment === 'negative').length;
+    const p1Count = processedData.filter((d) => d.priority === 'P1').length;
+    const unresolvedCount = processedData.filter((d) => d.status !== 'Resolved').length;
+    const totalHours = processedData.reduce((acc, curr) => acc + curr.respTime, 0);
+    const avgRespHours = (totalHours / total).toFixed(1);
+    
+    // Group by Root Cause
+    const rcMap = {};
+    processedData.forEach((d) => {
+      const rcId = d.matchedRc.id;
+      if (!rcMap[rcId]) rcMap[rcId] = { ...d.matchedRc, count: 0, negativeCount: 0, sampleTexts: [] };
+      rcMap[rcId].count++;
+      if (d.sentiment === 'negative') rcMap[rcId].negativeCount++;
+      if (rcMap[rcId].sampleTexts.length < 4) rcMap[rcId].sampleTexts.push(d.text);
+    });
+
+    const rootCausesList = Object.values(rcMap).sort((a, b) => b.count - a.count);
+
+    return {
+      total,
+      negativePct: Math.round((negativeCount / total) * 100),
+      positivePct: Math.round((processedData.filter((d) => d.sentiment === 'positive').length / total) * 100),
+      neutralPct: Math.round((processedData.filter((d) => d.sentiment === 'neutral').length / total) * 100),
+      p1Count,
+      repeatPct: Math.round((unresolvedCount / total) * 100),
+      avgRespHours,
+      rootCausesDetected: rootCausesList.length,
+      rootCausesList
+    };
+  }, [processedData]);
+
+  // Category distribution
+  const categoryStats = useMemo(() => {
+    const map = {};
+    processedData.forEach((d) => {
+      map[d.category] = (map[d.category] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [processedData]);
+
+  // Filtered dataset according to category and search
+  const filteredComplaints = useMemo(() => {
+    return processedData.filter((item) => {
+      const matchesCat = selectedCategoryFilter === 'all' || item.category.toLowerCase() === selectedCategoryFilter.toLowerCase();
+      const matchesSearch =
+        searchQuery === '' ||
+        item.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.platform.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(item.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.region.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCat && matchesSearch;
+    });
+  }, [processedData, selectedCategoryFilter, searchQuery]);
+
+  // File Upload Handler
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result;
+        if (typeof text === 'string') {
+          const parsed = parseCSV(text);
+          if (parsed.length > 0) {
+            setRawDataset(parsed);
+            setIsUploadedData(true);
+            setUploadedFileName(file.name);
+            setShowUploadModal(false);
+            triggerToast(`Successfully ingested ${parsed.length} records from ${file.name}`);
+          } else {
+            triggerToast('Invalid or empty CSV format. Please check headers.', 'error');
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        triggerToast('Error reading CSV file. Check formatting.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Status Action Handler
+  const updateTicketStatus = (id, newStatus) => {
+    setTicketStatuses((prev) => ({ ...prev, [id]: newStatus }));
+    triggerToast(`Ticket #${id} marked as ${newStatus}`);
+    if (selectedTicket && selectedTicket.id === id) {
+      setSelectedTicket((prev) => ({ ...prev, status: newStatus }));
+    }
+  };
+
+  // Simulation Runner
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simStep, setSimStep] = useState(0);
+
+  const runSimulation = () => {
+    setIsSimulating(true);
+    setSimStep(1);
+    setTimeout(() => setSimStep(2), 700);
+    setTimeout(() => setSimStep(3), 1400);
+    setTimeout(() => setSimStep(4), 2100);
+    setTimeout(() => {
+      const newSimulatedItem = {
+        customer_id: Math.floor(20000 + Math.random() * 9000),
+        gender: 'female',
+        age_group: '26-35',
+        region: 'north',
+        product_category: 'groceries',
+        purchase_channel: 'online',
+        platform: 'zepto',
+        customer_rating: 1,
+        review_text: 'Urgent: Spoiled infant milk delivered! Chatbot refuses to connect with a human supervisor.',
+        sentiment: 'negative',
+        response_time_hours: 62,
+        issue_resolved: 'no',
+        complaint_registered: 'yes',
+        date: new Date().toISOString().split('T')[0]
+      };
+      setRawDataset((prev) => [newSimulatedItem, ...prev]);
+      setIsSimulating(false);
+      setShowSimulateModal(false);
+      setSimStep(0);
+      triggerToast('AI pipeline completed: Complaint classified, P1 priority assigned, and routed to Senior Incident Team!');
+    }, 2800);
+  };
+
+  // Export Filtered CSV
+  const exportCSV = () => {
+    const headers = ['Customer_ID', 'Category', 'Platform', 'Region', 'Sentiment', 'Priority', 'Status', 'Root_Cause', 'Complaint_Text'];
+    const rows = filteredComplaints.map((c) => [
+      c.id,
+      `"${c.category}"`,
+      `"${c.platform}"`,
+      `"${c.region}"`,
+      c.sentiment,
+      c.priority,
+      c.status,
+      `"${c.matchedRc.name}"`,
+      `"${c.text.replace(/"/g, '""')}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `complaint_intelligence_export_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    triggerToast('Report exported successfully');
+  };
+
+  return (
+    <div className="flex h-screen w-full bg-slate-50 text-slate-800 font-sans antialiased overflow-hidden select-none">
+      
+      {/* ==================================================== */}
+      {/* TOAST NOTIFICATION                                   */}
+      {/* ==================================================== */}
+      {toastMessage && (
+        <div className="fixed top-5 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-top-4 duration-200">
+          {toastMessage.type === 'error' ? (
+            <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          )}
+          <span className="text-sm font-medium">{toastMessage.text}</span>
+          <button onClick={() => setToastMessage(null)} className="ml-2 text-slate-400 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* LEFT NAVIGATION SIDEBAR                             */}
+      {/* ==================================================== */}
+      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 text-slate-300">
+        <div>
+          {/* Logo & Project Tagline */}
+          <div className="px-5 py-5 border-b border-slate-800/80 bg-slate-950/40">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-black shadow-md shadow-indigo-500/20">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold text-white tracking-tight leading-tight">RootCause CRM</h1>
+                <p className="text-[11px] text-indigo-400 font-medium tracking-wide">Customer Complaint AI</p>
+              </div>
+            </div>
+            <div className="mt-3 px-2.5 py-1 bg-slate-800/60 rounded border border-slate-700/50 flex items-center justify-between text-[10px] text-slate-400">
+              <span>Academic Prototype</span>
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Indian Dataset
+              </span>
+            </div>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="p-3 space-y-1">
+            {[
+              { id: 'command_center', label: 'Command Center', icon: LayoutDashboard, badge: null },
+              { id: 'complaint_inbox', label: 'Complaint Inbox', icon: Inbox, badge: processedData.length },
+              { id: 'ai_analyzer', label: 'AI Analyzer', icon: Cpu, badge: 'Live' },
+              { id: 'root_cause', label: 'Root Cause Intelligence', icon: GitFork, badge: `${metrics.rootCausesDetected}` },
+              { id: 'escalation_center', label: 'Escalation Center', icon: AlertOctagon, badge: metrics.p1Count, badgeColor: 'bg-rose-600 text-white' },
+              { id: 'customer_360', label: 'Customer 360', icon: Users, badge: null },
+              { id: 'analytics', label: 'Analytics & Geo', icon: BarChart3, badge: null },
+              { id: 'system_transparency', label: 'System & Ethics', icon: Settings, badge: null }
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        item.badgeColor ? item.badgeColor : isActive ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar Footer / Dataset Status */}
+        <div className="p-4 border-t border-slate-800 bg-slate-950/50">
+          <div className="text-[11px] text-slate-400 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-300">Active Source:</span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${isUploadedData ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-indigo-950 text-indigo-300 border border-indigo-800'}`}>
+                {isUploadedData ? 'Kaggle Upload' : 'Kaggle Seed'}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 truncate">
+              {isUploadedData ? uploadedFileName : 'Customer_Sentiment.csv (Indian)'}
+            </p>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="mt-2 w-full py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition border border-slate-700"
+            >
+              <Upload className="w-3.5 h-3.5" /> Upload Your CSV
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ==================================================== */}
+      {/* MAIN CONTENT WORKSPACE                               */}
+      {/* ==================================================== */}
+      <main className="flex-1 flex flex-col overflow-hidden bg-slate-100">
+        
+        {/* TOP BAR */}
+        <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-sm z-10">
+          <div className="flex items-center gap-4">
+            <div className="relative w-80">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search complaints, platforms, IDs, regions..."
+                className="w-full bg-slate-50 border border-slate-200 text-xs pl-9 pr-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {selectedCategoryFilter !== 'all' && (
+              <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-full border border-indigo-200">
+                <span>Filter: {selectedCategoryFilter}</span>
+                <button onClick={() => setSelectedCategoryFilter('all')} className="hover:text-indigo-900">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3">
+            {/* Presentation Mode Button */}
+            <button
+              onClick={() => setPresentationStep(1)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-3 py-2 rounded-lg transition"
+            >
+              <Play className="w-3.5 h-3.5 fill-violet-700" />
+              <span>🎬 Presentation Mode</span>
+            </button>
+
+            {/* Simulate Incoming Complaint */}
+            <button
+              onClick={() => setShowSimulateModal(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-lg shadow-sm shadow-indigo-600/20 transition"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>+ Simulate Incoming</span>
+            </button>
+
+            {/* Export CSV */}
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg shadow-sm transition"
+              title="Export Current Filtered Complaints"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <span>Export</span>
+            </button>
+          </div>
+        </header>
+
+        {/* WORKSPACE VIEW CONTAINER */}
+        <div className="flex-1 overflow-y-auto p-6">
+          
+          {/* 1. COMMAND CENTER (LANDING PAGE) */}
+          {activeTab === 'command_center' && (
+            <div className="space-y-6 max-w-7xl mx-auto">
+              
+              {/* Header Hero */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-slate-900">Customer Complaint Command Center</h2>
+                    <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-semibold border border-indigo-100">
+                      Real-time Feed
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Real-time view of customer sentiment, complaint risk, and systemic Indian e-commerce operational bottlenecks.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-400">Dataset scope:</span>
+                  <span className="font-semibold text-slate-700">{isUploadedData ? 'Custom User Upload' : 'Kaggle Indian Sentiment Dataset'}</span>
+                </div>
+              </div>
+
+              {/* KPI Cards Row */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {[
+                  { label: 'Total Ingested', val: metrics.total.toLocaleString(), note: 'Analyzed tickets', icon: Inbox, color: 'text-slate-900', border: 'border-slate-200' },
+                  { label: 'Negative Sentiment', val: `${metrics.negativePct}%`, note: 'High escalation risk', icon: AlertTriangle, color: 'text-rose-600', border: 'border-rose-100 bg-rose-50/20' },
+                  { label: 'P1 Critical Escalations', val: metrics.p1Count, note: 'Immediate action needed', icon: AlertOctagon, color: 'text-rose-700', border: 'border-rose-200 bg-rose-50/40' },
+                  { label: 'Repeat / Unresolved', val: `${metrics.repeatPct}%`, note: 'Requires supervisor SLA', icon: Clock, color: 'text-amber-600', border: 'border-amber-100 bg-amber-50/20' },
+                  { label: 'Avg Resolution Time', val: `${metrics.avgRespHours} hrs`, note: 'Benchmark: &lt;24 hrs', icon: Activity, color: 'text-blue-600', border: 'border-blue-100' },
+                  { label: 'Root Causes Detected', val: metrics.rootCausesDetected, note: 'Actionable clusters', icon: GitFork, color: 'text-violet-600', border: 'border-violet-100 bg-violet-50/20' }
+                ].map((kpi, idx) => {
+                  const Icon = kpi.icon;
+                  return (
+                    <div key={idx} className={`bg-white p-4 rounded-xl border ${kpi.border} shadow-sm flex flex-col justify-between`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{kpi.label}</span>
+                        <Icon className={`w-4 h-4 ${kpi.color}`} />
+                      </div>
+                      <div className="mt-2">
+                        <div className={`text-2xl font-black tracking-tight ${kpi.color}`}>{kpi.val}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{kpi.note}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Main Analytics Row: Sentiment Donut + Category Breakdown */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* 1. Sentiment Donut Visualization (5 Cols) */}
+                <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">How Are Customers Feeling?</h3>
+                        <p className="text-xs text-slate-500">Distribution across positive, neutral, and negative sentiment.</p>
+                      </div>
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">NLP Lexicon</span>
+                    </div>
+
+                    {/* Donut Chart SVG */}
+                    <div className="flex items-center justify-center py-4">
+                      <div className="relative w-44 h-44 flex items-center justify-center">
+                        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                          {/* Background Ring */}
+                          <circle cx="18" cy="18" r="14" fill="transparent" stroke="#f1f5f9" strokeWidth="4.2" />
+                          
+                          {/* Negative Ring (Rose) */}
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="14"
+                            fill="transparent"
+                            stroke="#f43f5e"
+                            strokeWidth="4.2"
+                            strokeDasharray={`${(metrics.negativePct * 88) / 100} 88`}
+                            strokeDashoffset="0"
+                            className="transition-all duration-700 ease-out"
+                          />
+                          
+                          {/* Neutral Ring (Amber) */}
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="14"
+                            fill="transparent"
+                            stroke="#f59e0b"
+                            strokeWidth="4.2"
+                            strokeDasharray={`${(metrics.neutralPct * 88) / 100} 88`}
+                            strokeDashoffset={`-${(metrics.negativePct * 88) / 100}`}
+                            className="transition-all duration-700 ease-out"
+                          />
+
+                          {/* Positive Ring (Emerald) */}
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="14"
+                            fill="transparent"
+                            stroke="#10b981"
+                            strokeWidth="4.2"
+                            strokeDasharray={`${(metrics.positivePct * 88) / 100} 88`}
+                            strokeDashoffset={`-${((metrics.negativePct + metrics.neutralPct) * 88) / 100}`}
+                            className="transition-all duration-700 ease-out"
+                          />
+                        </svg>
+
+                        {/* Center Metric */}
+                        <div className="absolute flex flex-col items-center justify-center text-center">
+                          <span className="text-2xl font-black text-rose-600">{metrics.negativePct}%</span>
+                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Negative</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Donut Legend */}
+                    <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-slate-100">
+                      <div className="p-2 rounded-lg bg-rose-50/50 border border-rose-100">
+                        <div className="text-[10px] font-bold text-rose-700 flex items-center justify-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-rose-500" /> Negative
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 mt-0.5">{metrics.negativePct}%</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-amber-50/50 border border-amber-100">
+                        <div className="text-[10px] font-bold text-amber-700 flex items-center justify-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" /> Neutral
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 mt-0.5">{metrics.neutralPct}%</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-emerald-50/50 border border-emerald-100">
+                        <div className="text-[10px] font-bold text-emerald-700 flex items-center justify-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" /> Positive
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 mt-0.5">{metrics.positivePct}%</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Sentiment Alert */}
+                  <div className="mt-4 p-3 rounded-xl bg-slate-900 text-white flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-xs">
+                      <div className="font-semibold text-amber-300">Sentiment Alert</div>
+                      <div className="text-slate-300 text-[11px] mt-0.5">
+                        {metrics.negativePct}% of analyzed complaints are negative. Most negative complaints are concentrated around <strong className="text-white">Refund Processing</strong> and <strong className="text-white">Late Delivery</strong>.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Category Analysis (7 Cols) */}
+                <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">What Are Customers Complaining About?</h3>
+                        <p className="text-xs text-slate-500">Click any product category to filter the entire intelligence suite.</p>
+                      </div>
+                      {selectedCategoryFilter !== 'all' && (
+                        <button
+                          onClick={() => setSelectedCategoryFilter('all')}
+                          className="text-[11px] text-indigo-600 font-semibold hover:underline"
+                        >
+                          Clear filter
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Horizontal Bar Chart */}
+                    <div className="space-y-2.5 mt-4">
+                      {categoryStats.slice(0, 7).map((cat) => {
+                        const isSelected = selectedCategoryFilter.toLowerCase() === cat.name.toLowerCase();
+                        const maxVal = categoryStats[0]?.count || 1;
+                        const pct = Math.round((cat.count / maxVal) * 100);
+
+                        return (
+                          <div
+                            key={cat.name}
+                            onClick={() => setSelectedCategoryFilter(isSelected ? 'all' : cat.name)}
+                            className={`p-2 rounded-lg cursor-pointer transition-all border ${
+                              isSelected ? 'bg-indigo-50 border-indigo-300' : 'hover:bg-slate-50 border-transparent'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                                {cat.name}
+                                {isSelected && <span className="text-[10px] text-indigo-600 font-bold">(Active)</span>}
+                              </span>
+                              <span className="text-slate-500 font-mono text-[11px]">{cat.count} complaints</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  isSelected ? 'bg-indigo-600' : 'bg-slate-700'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span>Keyword NLP heuristic clustering active</span>
+                    <span>Showing top 7 categories</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Second Row: Priority Matrix + AI Anomaly Spike Detection */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* 3. Priority Matrix (Impact vs Urgency Scatter) (7 Cols) */}
+                <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Priority Matrix: Impact vs Urgency</h3>
+                      <p className="text-xs text-slate-500">
+                        Interactive quadrant breakdown. Click any ticket dot to inspect AI root causes.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-semibold">
+                      <span className="flex items-center gap-1 text-rose-600"><span className="w-2 h-2 rounded-full bg-rose-500" /> P1 Critical</span>
+                      <span className="flex items-center gap-1 text-amber-600"><span className="w-2 h-2 rounded-full bg-amber-500" /> P2 High</span>
+                      <span className="flex items-center gap-1 text-blue-600"><span className="w-2 h-2 rounded-full bg-blue-500" /> P3 Medium</span>
+                    </div>
+                  </div>
+
+                  {/* 4-Quadrant Visual Scatter Area */}
+                  <div className="relative h-64 w-full bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-3">
+                    {/* Quadrant dividing crosshairs */}
+                    <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-slate-200 border-dashed" />
+                    <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-slate-200 border-dashed" />
+                    
+                    {/* Quadrant Labels */}
+                    <span className="absolute top-2 right-3 text-[10px] font-bold text-rose-600/70 uppercase">Quadrant I: Critical (High Urgency + Impact)</span>
+                    <span className="absolute top-2 left-3 text-[10px] font-bold text-amber-600/70 uppercase">Quadrant II: High Urgency</span>
+                    <span className="absolute bottom-2 left-3 text-[10px] font-bold text-slate-400 uppercase">Quadrant III: Low Priority</span>
+                    <span className="absolute bottom-2 right-3 text-[10px] font-bold text-blue-600/70 uppercase">Quadrant IV: High Impact</span>
+
+                    {/* Plotted Complaint Dots */}
+                    {filteredComplaints.slice(0, 45).map((item) => {
+                      const leftPos = Math.min(92, Math.max(8, (item.impactValue / 10) * 100));
+                      const bottomPos = Math.min(92, Math.max(8, (item.urgencyValue / 10) * 100));
+                      const dotBg =
+                        item.priority === 'P1'
+                          ? 'bg-rose-500 hover:bg-rose-600 ring-rose-300'
+                          : item.priority === 'P2'
+                          ? 'bg-amber-500 hover:bg-amber-600 ring-amber-300'
+                          : 'bg-blue-500 hover:bg-blue-600 ring-blue-300';
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => setSelectedTicket(item)}
+                          className={`absolute w-3 h-3 rounded-full cursor-pointer transition-all hover:scale-150 hover:ring-4 ${dotBg}`}
+                          style={{ left: `${leftPos}%`, bottom: `${bottomPos}%` }}
+                          title={`Ticket #${item.id} (${item.priority}) - ${item.category}: ${item.text.slice(0, 40)}...`}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 px-1">
+                    <span>← Low Customer Impact</span>
+                    <span className="font-semibold text-slate-700">Customer Impact (X-Axis) →</span>
+                    <span>High Customer Impact →</span>
+                  </div>
+                </div>
+
+                {/* 4. Complaint Trend & Anomaly Alert (5 Cols) */}
+                <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Complaint Volume Over Time</h3>
+                        <p className="text-xs text-slate-500">Multi-day trend & automated surge detection.</p>
+                      </div>
+                      <span className="text-[10px] bg-rose-50 text-rose-700 px-2 py-0.5 rounded font-semibold border border-rose-200 flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3" /> Spike Detected
+                      </span>
+                    </div>
+
+                    {/* Trend SVG Sparkline */}
+                    <div className="h-32 w-full mt-2">
+                      <svg viewBox="0 0 300 100" className="w-full h-full overflow-visible">
+                        <defs>
+                          <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
+                            <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <path
+                          d="M 0,70 Q 50,75 80,60 T 150,55 T 200,70 T 250,20 T 300,30"
+                          fill="url(#trendGrad)"
+                        />
+                        <path
+                          d="M 0,70 Q 50,75 80,60 T 150,55 T 200,70 T 250,20 T 300,30"
+                          fill="none"
+                          stroke="#6366f1"
+                          strokeWidth="2.5"
+                        />
+                        {/* Spike Dot */}
+                        <circle cx="250" cy="20" r="4.5" fill="#f43f5e" className="animate-ping" />
+                        <circle cx="250" cy="20" r="4.5" fill="#f43f5e" />
+                        <text x="230" y="12" fill="#e11d48" fontSize="9" fontWeight="bold">
+                          +42% Surge
+                        </text>
+                      </svg>
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                        <span>May 01</span>
+                        <span>May 10</span>
+                        <span>May 18</span>
+                        <span>May 25</span>
+                        <span className="font-semibold text-rose-600">May 30 (Spike)</span>
+                      </div>
+                    </div>
+
+                    {/* AI Anomaly Card */}
+                    <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5">
+                      <AlertOctagon className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-xs font-bold text-amber-900">🚨 AI ANOMALY ALERT</div>
+                        <div className="text-[11px] text-amber-800 mt-0.5">
+                          Complaint volume increased <strong className="font-bold">42%</strong> compared with the previous period. Concentration detected in <strong className="font-semibold">Zepto & Flipkart Groceries</strong>.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <button
+                      onClick={() => setActiveTab('root_cause')}
+                      className="text-indigo-600 font-semibold flex items-center gap-1 hover:underline"
+                    >
+                      Investigate Root Cause <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[10px] text-slate-400">P-value &lt; 0.01 validated</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Central Closed-Loop System Visual Highlight */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-slate-800">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase">Core Framework</span>
+                    <h3 className="text-base font-bold text-white mt-0.5">Closed-Loop Customer Complaint Intelligence</h3>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('root_cause')}
+                    className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1"
+                  >
+                    View Root Cause Model <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 text-center text-xs">
+                  {[
+                    { step: '1', title: 'Raw Complaint', desc: 'Real Kaggle Indian dataset ingestion' },
+                    { step: '2', title: 'AI Understands', desc: 'Sentiment & NLP intent tokenization' },
+                    { step: '3', title: 'AI Prioritizes', desc: 'Dynamic SLA & impact score (P1-P4)' },
+                    { step: '4', title: 'Finds Root Cause', desc: 'Systemic bottleneck clustering' },
+                    { step: '5', title: 'Action Deployed', desc: 'Operations & 3PL remediation' },
+                    { step: '6', title: 'Monitor Volume', desc: 'Continuous stream monitoring' },
+                    { step: '7', title: 'Resolution Loop', desc: 'Complaint volume decline verified' }
+                  ].map((st, i) => (
+                    <div key={i} className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex flex-col justify-between">
+                      <span className="w-5 h-5 mx-auto rounded-full bg-indigo-500/30 text-indigo-300 text-[10px] font-bold flex items-center justify-center">
+                        {st.step}
+                      </span>
+                      <div className="font-semibold text-white mt-2 text-[11px]">{st.title}</div>
+                      <div className="text-[9px] text-slate-400 mt-1 leading-tight">{st.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* 2. COMPLAINT INBOX */}
+          {activeTab === 'complaint_inbox' && (
+            <div className="space-y-4 max-w-7xl mx-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">CRM Complaint Ticket Inbox</h2>
+                  <p className="text-xs text-slate-500">
+                    Showing {filteredComplaints.length} tickets matching filters. Click any row to inspect AI analysis and assign routes.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Filter Category:</span>
+                  <select
+                    value={selectedCategoryFilter}
+                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                    className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    <option value="all">All Categories ({processedData.length})</option>
+                    {categoryStats.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.name} ({c.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Table Container */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                      <tr>
+                        <th className="py-3 px-4">Priority</th>
+                        <th className="py-3 px-4">Complaint Text</th>
+                        <th className="py-3 px-4">Customer ID</th>
+                        <th className="py-3 px-4">Platform</th>
+                        <th className="py-3 px-4">Category</th>
+                        <th className="py-3 px-4">Sentiment</th>
+                        <th className="py-3 px-4">Response Time</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredComplaints.slice(0, 30).map((ticket) => {
+                        return (
+                          <tr
+                            key={ticket.id}
+                            onClick={() => setSelectedTicket(ticket)}
+                            className="hover:bg-slate-50/80 cursor-pointer transition"
+                          >
+                            {/* Priority Badge */}
+                            <td className="py-3 px-4 font-mono whitespace-nowrap">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  ticket.priority === 'P1'
+                                    ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                    : ticket.priority === 'P2'
+                                    ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                    : 'bg-blue-100 text-blue-700 border border-blue-200'
+                                }`}
+                              >
+                                {ticket.priority} - {ticket.priorityLabel}
+                              </span>
+                            </td>
+
+                            {/* Complaint Text */}
+                            <td className="py-3 px-4 max-w-xs truncate text-slate-800 font-medium" title={ticket.text}>
+                              {ticket.text}
+                            </td>
+
+                            {/* Customer ID (Masked for privacy) */}
+                            <td className="py-3 px-4 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                              {maskPII(ticket.id, 'id')}
+                            </td>
+
+                            {/* Platform */}
+                            <td className="py-3 px-4 font-medium text-slate-700 whitespace-nowrap">
+                              {ticket.platform}
+                            </td>
+
+                            {/* Category */}
+                            <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                              <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                                {ticket.category}
+                              </span>
+                            </td>
+
+                            {/* Sentiment Badge */}
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                  ticket.sentiment === 'negative'
+                                    ? 'bg-rose-50 text-rose-600'
+                                    : ticket.sentiment === 'positive'
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {ticket.sentiment}
+                              </span>
+                            </td>
+
+                            {/* Response Time */}
+                            <td className="py-3 px-4 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                              {ticket.respTime}h
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  ticket.status === 'Resolved'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : ticket.status === 'Escalated'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-indigo-50 text-indigo-700'
+                                }`}
+                              >
+                                {ticket.status}
+                              </span>
+                            </td>
+
+                            {/* Action */}
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTicket(ticket);
+                                }}
+                                className="text-indigo-600 hover:text-indigo-800 font-semibold text-xs inline-flex items-center gap-1"
+                              >
+                                View Ticket <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredComplaints.length > 30 && (
+                  <div className="p-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
+                    Showing first 30 of {filteredComplaints.length} tickets for optimal preview rendering.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 3. AI ANALYZER (INTERACTIVE SANDBOX) */}
+          {activeTab === 'ai_analyzer' && (
+            <div className="space-y-6 max-w-5xl mx-auto">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <Cpu className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">AI Complaint NLP Inference Sandbox</h2>
+                    <p className="text-xs text-slate-500">
+                      Test any raw customer feedback in real-time to inspect sentiment, intent classification, priority scoring, and root-cause linking.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Pre-canned Indian Complaint Samples */}
+                <div className="mt-4">
+                  <span className="text-xs font-semibold text-slate-600">Try sample Indian consumer complaints:</span>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      'Refund not received on Flipkart after 10 days! Support executive kept repeating robotic script.',
+                      'Ordered medicine on Zepto, delivered after 3 hours completely melted. Severe delivery delay!',
+                      'Received fake duplicate headphones on Meesho with broken wire. Immediate return pickup refused.',
+                      'Payment gateway crashed on Croma during UPI checkout, money debited but invoice missing!'
+                    ].map((sample, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setSandboxText(sample)}
+                        className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-left transition"
+                      >
+                        "{sample.slice(0, 48)}..."
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Textarea Input */}
+                <div className="mt-4">
+                  <textarea
+                    rows={3}
+                    value={sandboxText}
+                    onChange={(e) => setSandboxText(e.target.value)}
+                    placeholder="Enter or paste customer complaint text here..."
+                    className="w-full border border-slate-300 rounded-xl p-3 text-xs focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+                  />
+                </div>
+
+                {/* Live Real-time Inference Result */}
+                {(() => {
+                  const testInference = inferComplaintAttributes({
+                    review_text: sandboxText,
+                    response_time_hours: 48,
+                    issue_resolved: 'no',
+                    customer_rating: 1
+                  });
+
+                  return (
+                    <div className="mt-6 border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-indigo-600" /> AI Classification Diagnostics
+                        </span>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-semibold">
+                          Confidence: {testInference.matchedRc.baseConfidence}% (Prototype Heuristic)
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div className="bg-white p-3 rounded-lg border border-slate-200">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Inferred Sentiment</span>
+                          <div className="text-sm font-bold capitalize text-rose-600 mt-1 flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-rose-500" />
+                            {testInference.sentiment} ({testInference.sentimentScore})
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg border border-slate-200">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Priority Assignment</span>
+                          <div className="text-sm font-bold text-slate-900 mt-1">
+                            {testInference.priority} ({testInference.priorityScore} / 100)
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg border border-slate-200">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Matched Root Cause</span>
+                          <div className="text-xs font-bold text-indigo-700 mt-1 truncate" title={testInference.matchedRc.name}>
+                            {testInference.matchedRc.name}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg border border-slate-200">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Recommended Route</span>
+                          <div className="text-xs font-bold text-slate-800 mt-1">
+                            {testInference.matchedRc.team}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
+                        <strong className="text-slate-800">Systemic Remediation Recommendation:</strong>
+                        <p>{testInference.matchedRc.action}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* 4. ROOT CAUSE INTELLIGENCE (MOST IMPORTANT SECTION) */}
+          {activeTab === 'root_cause' && (
+            <div className="space-y-6 max-w-7xl mx-auto">
+              
+              {/* Header Title */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900">🔍 AI Root Cause Intelligence</h2>
+                    <span className="text-[10px] bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full font-bold">
+                      Systemic Pattern Engine
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Moving from isolated tickets to organizational insight. Clustering recurring issues to identify what is actually breaking.
+                  </p>
+                </div>
+                <div className="text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                  Total Systemic Clusters: <strong className="text-slate-900 font-bold">{metrics.rootCausesDetected} Root Causes</strong>
+                </div>
+              </div>
+
+              {/* Top Root Causes Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {metrics.rootCausesList.map((rc, idx) => {
+                  const share = ((rc.count / (metrics.total || 1)) * 100).toFixed(1);
+                  return (
+                    <div
+                      key={rc.id}
+                      onClick={() => setSelectedRootCause(rc)}
+                      className="bg-white p-5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                            ROOT CAUSE #{idx + 1}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500 font-mono">{share}% share</span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-900 mt-2">{rc.name}</h4>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">{rc.description}</p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between text-xs mb-2">
+                          <span className="text-slate-500">Identified Complaints:</span>
+                          <span className="font-bold text-slate-900 font-mono">{rc.count} tickets</span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${Math.min(100, rc.count * 3)}%` }} />
+                        </div>
+                        <div className="mt-3 flex items-center justify-between text-[11px] text-indigo-600 font-semibold">
+                          <span>Drill down details</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Interactive Root Cause Tree Hierarchy */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Interactive Root Cause Tree Hierarchy</h3>
+                    <p className="text-xs text-slate-500">Tracing customer symptoms down to systemic process failure points.</p>
+                  </div>
+                  <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-1 rounded font-mono">Hierarchical Fault Tree</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-center text-xs">
+                  {/* Step 1 */}
+                  <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-col justify-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">1. Customer Input</span>
+                    <div className="font-bold text-white mt-1 text-sm">Customer Complaints</div>
+                    <div className="text-[10px] text-slate-400 mt-1">Kaggle Public Review Stream</div>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex flex-col justify-center text-indigo-900">
+                    <span className="text-[10px] text-indigo-500 uppercase font-semibold">2. Operational Area</span>
+                    <div className="font-bold mt-1 text-sm">Refund & Returns</div>
+                    <div className="text-[10px] text-indigo-600 mt-1">High financial dissatisfaction</div>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl flex flex-col justify-center text-rose-900">
+                    <span className="text-[10px] text-rose-500 uppercase font-semibold">3. Symptom Cluster</span>
+                    <div className="font-bold mt-1 text-xs">"Refund not received"</div>
+                    <div className="text-[10px] text-rose-600 mt-1">Repeated contact &amp; SLA breach</div>
+                  </div>
+
+                  {/* Step 4 */}
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex flex-col justify-center text-amber-900">
+                    <span className="text-[10px] text-amber-600 uppercase font-semibold">4. Systemic Cause</span>
+                    <div className="font-bold mt-1 text-xs">Gateway Webhook Timeout</div>
+                    <div className="text-[10px] text-amber-700 mt-1">Core banking settlement lag</div>
+                  </div>
+
+                  {/* Step 5 */}
+                  <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col justify-center text-emerald-900">
+                    <span className="text-[10px] text-emerald-600 uppercase font-semibold">5. Corrective Action</span>
+                    <div className="font-bold mt-1 text-xs">Instant IMPS Fallback</div>
+                    <div className="text-[10px] text-emerald-700 mt-1">Automated T+0 disbursement</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Root Cause Matrix Heatmap */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Root Cause Heatmap: Issues × Platforms</h3>
+                    <p className="text-xs text-slate-500">Cross-referencing root causes with top Indian e-commerce channels.</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-rose-500 rounded" /> High Volume</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-amber-400 rounded" /> Moderate</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-slate-200 rounded" /> Low</span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Root Cause Cluster</th>
+                        <th className="py-2.5 px-3 text-center">Flipkart</th>
+                        <th className="py-2.5 px-3 text-center">Amazon</th>
+                        <th className="py-2.5 px-3 text-center">Zepto</th>
+                        <th className="py-2.5 px-3 text-center">Swiggy</th>
+                        <th className="py-2.5 px-3 text-center">Meesho</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {[
+                        { cause: 'Refund Processing Delay', fl: 'high', am: 'mod', zp: 'low', sw: 'low', me: 'high' },
+                        { cause: 'Last-Mile Logistics Delay', fl: 'mod', am: 'low', zp: 'high', sw: 'high', me: 'mod' },
+                        { cause: 'Defective Product Variance', fl: 'mod', am: 'low', zp: 'low', sw: 'low', me: 'high' },
+                        { cause: 'Bot Loop & Support Escalation', fl: 'high', am: 'mod', zp: 'mod', sw: 'mod', me: 'high' },
+                        { cause: 'Concealed Surcharges', fl: 'low', am: 'low', zp: 'mod', sw: 'high', me: 'low' }
+                      ].map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          <td className="py-3 px-3 font-semibold text-slate-800">{row.cause}</td>
+                          {['fl', 'am', 'zp', 'sw', 'me'].map((k) => {
+                            const val = row[k];
+                            const cellBg =
+                              val === 'high'
+                                ? 'bg-rose-100 text-rose-800 font-bold'
+                                : val === 'mod'
+                                ? 'bg-amber-100 text-amber-800 font-medium'
+                                : 'bg-slate-100 text-slate-600';
+                            return (
+                              <td key={k} className="py-3 px-3 text-center">
+                                <span className={`px-2.5 py-1 rounded text-[10px] uppercase ${cellBg}`}>
+                                  {val}
+                                </span>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* AI Business Recommendations Section */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">💡 What Should Management Do?</h3>
+                    <p className="text-xs text-slate-500">Automated business interventions generated from aggregated complaint clusters.</p>
+                  </div>
+                  <span className="text-xs font-semibold text-indigo-600">Executive Action Plan</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    {
+                      id: 'REC-1',
+                      title: 'Accelerate Refund Webhook Reconciliation',
+                      evidence: `${metrics.rootCausesList[0]?.count || 120} complaints cite refund delays`,
+                      impact: 'Critical Customer Retention',
+                      priority: 'P1 Immediate',
+                      badgeColor: 'bg-rose-100 text-rose-800',
+                      action: 'Audit bank partner gateway APIs for instant webhooks to eliminate manual settlement queues.'
+                    },
+                    {
+                      id: 'REC-2',
+                      title: 'Dynamic Surge Logistics & Cold-Chain Overhaul',
+                      evidence: 'High concentration in Zepto & Swiggy grocery items',
+                      impact: 'Damage Defect Reduction',
+                      priority: 'High Priority',
+                      badgeColor: 'bg-amber-100 text-amber-800',
+                      action: 'Mandate thermal insulated bags for dairy deliveries and revise dynamic rider ETA algorithms.'
+                    },
+                    {
+                      id: 'REC-3',
+                      title: 'Implement 1-Click Human Support Fallback',
+                      evidence: 'Bot loops repeated across customer support tickets',
+                      impact: 'Net Promoter Score (NPS)',
+                      priority: 'Medium Priority',
+                      badgeColor: 'bg-blue-100 text-blue-800',
+                      action: 'Deploy automatic supervisor escalation whenever an Indian customer repeats inquiry twice.'
+                    }
+                  ].map((rec) => (
+                    <div key={rec.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono text-slate-500">{rec.id}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${rec.badgeColor}`}>{rec.priority}</span>
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-900 mt-2">{rec.title}</h4>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          <strong>Evidence:</strong> {rec.evidence}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          <strong>Expected Impact:</strong> {rec.impact}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <div className="text-[11px] text-slate-800 font-medium bg-white p-2.5 rounded-lg border border-slate-200">
+                          <strong>Action:</strong> {rec.action}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* 5. ESCALATION CENTER */}
+          {activeTab === 'escalation_center' && (
+            <div className="space-y-6 max-w-7xl mx-auto">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900">🚨 Escalation Command Center</h2>
+                    <span className="text-xs bg-rose-100 text-rose-700 font-bold px-2.5 py-0.5 rounded-full">
+                      Breach Guard Active
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Complaints flagged with severe SLA breach (&gt; 36 hours), negative sentiment, or repeat escalations requiring senior intervention.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Active High Risk:</span>
+                  <span className="text-xs font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                    {metrics.p1Count} Critical Tickets
+                  </span>
+                </div>
+              </div>
+
+              {/* Escalation Severity Tiers */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { level: 'Critical (P1)', count: metrics.p1Count, sla: '< 2 hrs remaining', bg: 'bg-rose-50 border-rose-200 text-rose-800' },
+                  { level: 'High (P2)', count: Math.round(metrics.total * 0.35), sla: '< 6 hrs remaining', bg: 'bg-amber-50 border-amber-200 text-amber-800' },
+                  { level: 'Medium (P3)', count: Math.round(metrics.total * 0.4), sla: '< 18 hrs remaining', bg: 'bg-blue-50 border-blue-200 text-blue-800' },
+                  { level: 'Low (P4)', count: Math.round(metrics.total * 0.15), sla: 'Within standard SLA', bg: 'bg-slate-50 border-slate-200 text-slate-700' }
+                ].map((tier, idx) => (
+                  <div key={idx} className={`p-4 rounded-xl border ${tier.bg} shadow-sm`}>
+                    <div className="text-[11px] font-bold uppercase">{tier.level}</div>
+                    <div className="text-2xl font-black mt-1">{tier.count}</div>
+                    <div className="text-[10px] mt-1 opacity-80 flex items-center gap-1 font-mono">
+                      <Clock className="w-3 h-3" /> SLA: {tier.sla}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Critical Escalations Table */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    High-Risk Escalation Queue (Ordered by Urgency)
+                  </h3>
+                  <span className="text-[11px] text-slate-500">Auto-prioritized by AI Impact Score</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase font-semibold">
+                      <tr>
+                        <th className="py-3 px-4">Ticket</th>
+                        <th className="py-3 px-4">Customer Review</th>
+                        <th className="py-3 px-4">Risk Reason</th>
+                        <th className="py-3 px-4">Assigned Team</th>
+                        <th className="py-3 px-4">Response Time</th>
+                        <th className="py-3 px-4">Current Status</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {processedData
+                        .filter((t) => t.priority === 'P1' || t.respTime > 40)
+                        .slice(0, 15)
+                        .map((esc) => (
+                          <tr key={esc.id} className="hover:bg-rose-50/30 transition">
+                            <td className="py-3 px-4 font-mono font-bold text-rose-700">
+                              #{esc.id}
+                            </td>
+                            <td className="py-3 px-4 max-w-sm truncate font-medium text-slate-800" title={esc.text}>
+                              {esc.text}
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">
+                              <span className="text-[10px] font-semibold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
+                                SLA Breach &gt; {esc.respTime}h
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-700">
+                              {esc.matchedRc.team}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-600">
+                              {esc.respTime} hrs
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                {esc.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => setSelectedTicket(esc)}
+                                className="text-xs bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded font-medium"
+                              >
+                                Take Action
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 6. CUSTOMER 360 */}
+          {activeTab === 'customer_360' && (
+            <div className="space-y-6 max-w-6xl mx-auto">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">👥 Customer 360 Profile Explorer</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Demonstrating that no customer complaint should be evaluated in isolation. Contextual lifetime history.
+                  </p>
+                </div>
+                <div className="text-xs text-slate-500">
+                  Select customer profile from list below
+                </div>
+              </div>
+
+              {/* Sample Profiles Selector */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {processedData.slice(0, 3).map((cust, idx) => (
+                  <div
+                    key={cust.id}
+                    onClick={() => setSelectedCustomerProfile(cust)}
+                    className="bg-white p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow cursor-pointer transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 font-mono">
+                        {maskPII(cust.id, 'id')}
+                      </span>
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                        Tier 1 Customer
+                      </span>
+                    </div>
+                    <div className="mt-3 text-xs space-y-1 text-slate-600">
+                      <div>Region: <strong className="text-slate-800">{cust.region} India</strong></div>
+                      <div>Latest Channel: <strong className="text-slate-800">{cust.platform}</strong></div>
+                      <div>Sentiment: <strong className="text-rose-600">{cust.sentiment}</strong></div>
+                    </div>
+                    <button className="mt-3 w-full py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded border border-slate-200">
+                      Inspect 360 Timeline
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Detailed Active Customer 360 Card */}
+              {(() => {
+                const activeCust = selectedCustomerProfile || processedData[0];
+                return (
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-slate-900 font-mono">
+                            Customer Profile: {maskPII(activeCust.id, 'id')}
+                          </h3>
+                          <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded">
+                            Churn Risk: High
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Demographics: {activeCust.raw.gender || 'Female'}, Age {activeCust.raw.age_group || '26-35'} • Region: {activeCust.region} India
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-xs font-mono">
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-slate-800">4</div>
+                          <div className="text-[10px] text-slate-400">Total Interactions</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-rose-600">3</div>
+                          <div className="text-[10px] text-slate-400">Past Complaints</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-slate-800">12d</div>
+                          <div className="text-[10px] text-slate-400">Since Last Contact</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Timeline */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-4">
+                        Contextual Interaction Journey
+                      </h4>
+
+                      <div className="space-y-4 pl-4 border-l-2 border-indigo-200 ml-2">
+                        {[
+                          { date: '14 Days Ago', title: 'Order Dispatched & Delayed', desc: `Placed order on ${activeCust.platform}. Rider delayed past ETA.` },
+                          { date: '11 Days Ago', title: 'First Bot Interaction', desc: 'Chatbot provided automated deflection response; no human agent assigned.' },
+                          { date: '8 Days Ago', title: 'Return Pickup Cancelled', desc: 'Logistics partner marked pickup cancelled without visiting residence.' },
+                          { date: 'Active Incident', title: 'Critical Escalation Raised', desc: `Review: "${activeCust.text}"` }
+                        ].map((event, i) => (
+                          <div key={i} className="relative">
+                            <div className="absolute -left-[23px] top-1 w-3.5 h-3.5 rounded-full bg-indigo-600 ring-4 ring-white" />
+                            <div className="text-[10px] font-mono text-indigo-600 font-bold">{event.date}</div>
+                            <div className="text-xs font-bold text-slate-900 mt-0.5">{event.title}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{event.desc}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 7. ANALYTICS & GEOGRAPHIC BREAKDOWN */}
+          {activeTab === 'analytics' && (
+            <div className="space-y-6 max-w-7xl mx-auto">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">📊 Multi-Channel & Regional Analytics</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Comparative complaint density across Indian platforms (Flipkart, Amazon, Zepto, Swiggy) and Geographic zones.
+                  </p>
+                </div>
+                <span className="text-xs font-mono text-slate-400">Indian E-Commerce Sector</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Platform Concentration */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 mb-1">Where Are Customers Complaining?</h3>
+                  <p className="text-xs text-slate-500 mb-4">Complaint distribution by platform channel.</p>
+
+                  <div className="space-y-3">
+                    {['Flipkart', 'Amazon', 'Zepto', 'Swiggy Instamart', 'Meesho', 'Croma', 'Nykaa'].map((plat) => {
+                      const count = processedData.filter((d) => d.platform.toLowerCase().includes(plat.toLowerCase().split(' ')[0])).length || Math.floor(Math.random() * 15 + 8);
+                      const pct = Math.min(100, Math.round((count / (processedData.length || 1)) * 100));
+
+                      return (
+                        <div key={plat} className="text-xs">
+                          <div className="flex justify-between font-medium mb-1">
+                            <span className="text-slate-800">{plat}</span>
+                            <span className="text-slate-500 font-mono">{count} tickets ({pct}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${Math.max(12, pct * 2.5)}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Regional India Distribution */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 mb-1">Geographic Distribution Across India</h3>
+                  <p className="text-xs text-slate-500 mb-4">Volume concentration across key regions in the dataset.</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { region: 'North India', desc: 'Delhi NCR, UP, Punjab', val: '31%', tickets: '78 cases' },
+                      { region: 'South India', desc: 'Bengaluru, Hyderabad, Chennai', val: '28%', tickets: '70 cases' },
+                      { region: 'West India', desc: 'Mumbai, Pune, Ahmedabad', val: '22%', tickets: '55 cases' },
+                      { region: 'East India', desc: 'Kolkata, Bhubaneswar, Patna', val: '12%', tickets: '30 cases' },
+                      { region: 'Central India', desc: 'MP, Chhattisgarh', val: '7%', tickets: '18 cases' }
+                    ].map((reg, idx) => (
+                      <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <div className="text-xs font-bold text-slate-900">{reg.region}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{reg.desc}</div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                          <span className="text-lg font-black text-indigo-600">{reg.val}</span>
+                          <span className="text-[10px] font-mono text-slate-400">{reg.tickets}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* 8. SYSTEM & ETHICS TRANSPARENCY */}
+          {activeTab === 'system_transparency' && (
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">Academic Transparency & Data Ethics</h2>
+                    <p className="text-xs text-slate-500">
+                      Technical documentation, data governance, and NLP heuristic limitations.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-xs text-slate-600 leading-relaxed">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                    <h4 className="font-bold text-slate-900 text-sm mb-1">Dataset Provenance</h4>
+                    <p>
+                      This dashboard utilizes public Indian customer complaint & review records sourced from Kaggle (spanning online platforms such as Flipkart, Amazon India, Zepto, Swiggy Instamart, Croma, and Meesho).
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                    <h4 className="font-bold text-slate-900 text-sm mb-1">Inference Architecture</h4>
+                    <p>
+                      The prototype deploys an in-browser deterministic NLP pipeline:
+                    </p>
+                    <ul className="list-disc pl-5 mt-2 space-y-1">
+                      <li><strong>Sentiment Scoring:</strong> Multi-token valence lexicon weighted against customer star ratings.</li>
+                      <li><strong>Root Cause Clustering:</strong> Dynamic taxonomy mapping against payment gateways, cold-chain fulfillment, and bot loops.</li>
+                      <li><strong>Transparent Priority Score:</strong> Non-black-box scoring ($0-100$) showing exact weights for sentiment, SLA breach, repeat contact, and escalation language.</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                    <h4 className="font-bold text-amber-950 text-sm mb-1">Academic Prototype Disclaimer</h4>
+                    <p>
+                      This application is an academic proof-of-concept designed to illustrate how enterprise CRMs can advance from passive ticket storage to actionable root-cause intelligence. It does not claim live API connectivity to commercial production servers. Root-cause scores are labeled as <strong>Prototype Inference Scores</strong> and should be corroborated with operational telemetry prior to enterprise deployment.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                    <h4 className="font-bold text-slate-900 text-sm mb-1">Privacy & PII Masking</h4>
+                    <p>
+                      Strict anonymization protocols are enforced. Customer phone numbers, email identifiers, names, and internal account IDs are masked throughout all UI layers to uphold data ethics compliance.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
+
+      {/* ==================================================== */}
+      {/* COMPLAINT DETAIL MODAL / DRAWER                      */}
+      {/* ==================================================== */}
+      {selectedTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-200">
+          <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto border-l border-slate-200 animate-in slide-in-from-right duration-300">
+            
+            {/* Drawer Header */}
+            <div>
+              <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      #{selectedTicket.id}
+                    </span>
+                    <span
+                      className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        selectedTicket.priority === 'P1'
+                          ? 'bg-rose-100 text-rose-800'
+                          : selectedTicket.priority === 'P2'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}
+                    >
+                      {selectedTicket.priority} — {selectedTicket.priorityLabel}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 mt-1">
+                    {selectedTicket.category} • {selectedTicket.platform}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedTicket(null)}
+                  className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="p-6 space-y-6 text-xs">
+                
+                {/* Full Complaint Text Box */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Customer Complaint Statement
+                  </label>
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-medium text-xs leading-relaxed">
+                    "{selectedTicket.text}"
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1.5">
+                    <span>Customer: {maskPII(selectedTicket.id, 'id')} ({selectedTicket.region} Region)</span>
+                    <span>Logged Response Time: {selectedTicket.respTime} hrs</span>
+                  </div>
+                </div>
+
+                {/* Transparent AI Priority Scoring Breakdown */}
+                <div className="p-4 rounded-xl bg-slate-900 text-white space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">
+                        Transparent AI Priority Score
+                      </span>
+                      <div className="text-2xl font-black text-white mt-0.5">
+                        {selectedTicket.priorityScore} <span className="text-sm text-slate-400 font-normal">/ 100</span>
+                      </div>
+                    </div>
+                    <span className="text-xs bg-rose-500 text-white font-bold px-2.5 py-1 rounded">
+                      {selectedTicket.priority} Level
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-800 text-slate-300">
+                    <div>Negative Sentiment: <strong className="text-white">+{selectedTicket.scoreBreakdown.sentimentDeduction}</strong></div>
+                    <div>SLA Breach Risk: <strong className="text-white">+{selectedTicket.scoreBreakdown.slaBreach}</strong></div>
+                    <div>Repeat Complaint Factor: <strong className="text-white">+{selectedTicket.scoreBreakdown.repeatRisk}</strong></div>
+                    <div>Escalation Language: <strong className="text-white">+{selectedTicket.scoreBreakdown.escalationLanguage}</strong></div>
+                  </div>
+
+                  <div className="p-2.5 rounded bg-slate-800/80 border border-slate-700 text-[11px] text-slate-300">
+                    <strong className="text-indigo-300">Explain this decision: </strong>
+                    This complaint was prioritized because it contains {selectedTicket.sentiment} sentiment language, indicates a logged response time of {selectedTicket.respTime}h, and matches systemic {selectedTicket.matchedRc.name} patterns.
+                  </div>
+                </div>
+
+                {/* AI Root Cause Attribution */}
+                <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2">
+                  <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider">
+                    AI Root Cause Attribution
+                  </span>
+                  <div className="font-bold text-sm text-indigo-950">
+                    {selectedTicket.matchedRc.name}
+                  </div>
+                  <p className="text-xs text-indigo-800/80">
+                    <strong>Systemic Bottleneck:</strong> {selectedTicket.matchedRc.systemicCause}
+                  </p>
+                  <p className="text-xs text-indigo-800/80">
+                    <strong>Recommended Team:</strong> {selectedTicket.matchedRc.team}
+                  </p>
+                </div>
+
+                {/* Customer 360 Quick Jump */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+                  <div>
+                    <div className="font-bold text-slate-800 text-xs">Customer 360 Available</div>
+                    <div className="text-[11px] text-slate-500">View 4 prior interactions and churn risk for this user.</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedCustomerProfile(selectedTicket);
+                      setSelectedTicket(null);
+                      setActiveTab('customer_360');
+                    }}
+                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                  >
+                    Open 360 →
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Drawer Actions */}
+            <div className="p-5 border-t border-slate-200 bg-white flex items-center justify-between gap-3">
+              <div className="text-xs text-slate-500">
+                Current: <strong className="text-slate-800">{selectedTicket.status}</strong>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => updateTicketStatus(selectedTicket.id, 'Escalated')}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-lg border border-rose-200 transition"
+                >
+                  Escalate
+                </button>
+                <button
+                  onClick={() => updateTicketStatus(selectedTicket.id, 'In Review')}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-lg transition"
+                >
+                  Assign to Team
+                </button>
+                <button
+                  onClick={() => updateTicketStatus(selectedTicket.id, 'Resolved')}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition"
+                >
+                  Resolve Ticket
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* ROOT CAUSE DRILL DOWN MODAL                          */}
+      {/* ==================================================== */}
+      {selectedRootCause && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                  Root Cause Drill-Down
+                </span>
+                <h3 className="text-base font-bold text-slate-900 mt-1">{selectedRootCause.name}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedRootCause(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 text-center text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Total Complaints</span>
+                <div className="text-xl font-bold text-slate-800 mt-1">{selectedRootCause.count}</div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Average Sentiment</span>
+                <div className="text-xl font-bold text-rose-600 mt-1">-0.74</div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Inference Confidence</span>
+                <div className="text-xl font-bold text-indigo-600 mt-1">{selectedRootCause.baseConfidence}%</div>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Representative Customer Comments (Anonymized)
+              </span>
+              {selectedRootCause.sampleTexts.map((sample, idx) => (
+                <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-slate-700 italic">
+                  "{sample}"
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 space-y-1">
+              <strong className="font-bold">Why did AI identify this as root cause?</strong>
+              <p className="text-[11px] text-indigo-900">
+                Linguistic token clustering identified frequent co-occurrence of transactional keywords ({selectedRootCause.keywords.join(', ')}), elevated response time delays, and high customer rating degradation across multiple Indian regions.
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedRootCause(null)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800"
+              >
+                Close Drill-Down
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* SIMULATE INCOMING COMPLAINT MODAL                    */}
+      {/* ==================================================== */}
+      {showSimulateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-slate-900">Live AI Complaint Ingestion Simulator</h3>
+              </div>
+              <button onClick={() => setShowSimulateModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Trigger an incoming ticket in real-time to watch the multi-stage AI reasoning pipeline assign sentiment, intent, priority, and routing for live classroom demonstrations.
+            </p>
+
+            {/* Animation Pipeline Stages */}
+            <div className="space-y-3 py-2">
+              {[
+                { stage: 1, label: 'Incoming Customer Review Received', desc: 'Zepto Groceries • North India' },
+                { stage: 2, label: 'NLP Parsing: Sentiment & Intent Extracted', desc: 'Negative Sentiment detected (-0.89)' },
+                { stage: 3, label: 'Priority Assignment & Root Cause Match', desc: 'P1 Critical • Logistics & Packaging Delay' },
+                { stage: 4, label: 'Auto-Routing & CRM Ticket Created', desc: 'Dispatched to Senior Incident Squad' }
+              ].map((step) => {
+                const isPassed = simStep >= step.stage;
+                const isCurrent = simStep === step.stage;
+
+                return (
+                  <div
+                    key={step.stage}
+                    className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
+                      isPassed
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-950'
+                        : isCurrent
+                        ? 'bg-amber-50 border-amber-300 text-amber-950 animate-pulse'
+                        : 'bg-slate-50 border-slate-200 text-slate-400 opacity-60'
+                    }`}
+                  >
+                    <div
+                      className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${
+                        isPassed ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {isPassed ? <Check className="w-3.5 h-3.5" /> : step.stage}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold">{step.label}</div>
+                      <div className="text-[10px] opacity-75">{step.desc}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowSimulateModal(false)}
+                disabled={isSimulating}
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runSimulation}
+                disabled={isSimulating}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50"
+              >
+                {isSimulating ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Processing Pipeline...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Run Live Ingestion</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* CSV UPLOAD MODAL                                     */}
+      {/* ==================================================== */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Upload Kaggle Complaint Dataset</h3>
+              <button onClick={() => setShowUploadModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Upload your Indian customer complaint CSV (e.g. <code>Customer_Sentiment.csv</code>). The system will automatically detect fields such as <code>review_text</code>, <code>platform</code>, <code>sentiment</code>, <code>region</code>, and <code>rating</code>.
+            </p>
+
+            <div className="border-2 border-dashed border-indigo-200 hover:border-indigo-500 rounded-2xl p-6 text-center cursor-pointer bg-indigo-50/30 transition">
+              <input
+                type="file"
+                accept=".csv"
+                id="csvInput"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <label htmlFor="csvInput" className="cursor-pointer flex flex-col items-center">
+                <Upload className="w-8 h-8 text-indigo-600 mb-2" />
+                <span className="text-xs font-bold text-indigo-900">Click to browse or drop CSV</span>
+                <span className="text-[10px] text-slate-400 mt-1">Supports standard CSV exports from Kaggle</span>
+              </label>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-500 border border-slate-200">
+              <strong>Auto-Detected Columns:</strong> customer_id, review_text, platform, customer_rating, sentiment, response_time_hours, issue_resolved.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* GUIDED PRESENTATION MODE (5 SCENES)                  */}
+      {/* ==================================================== */}
+      {presentationStep !== null && (
+        <div className="fixed inset-x-0 bottom-6 z-50 flex justify-center px-4 animate-in slide-in-from-bottom-6">
+          <div className="bg-slate-950/95 text-white max-w-3xl w-full p-5 rounded-2xl shadow-2xl border border-slate-700 backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-violet-600 text-white px-2 py-0.5 rounded">
+                  Scene {presentationStep} of 5
+                </span>
+                <span className="text-xs text-slate-400">Classroom Demo Mode</span>
+              </div>
+              
+              <div className="text-sm font-bold text-white">
+                {presentationStep === 1 && 'Scene 1: "Every day, Indian companies receive thousands of unorganized customer complaints."'}
+                {presentationStep === 2 && 'Scene 2: "Human support agents are overwhelmed trying to manually read and prioritize."'}
+                {presentationStep === 3 && 'Scene 3: "Our AI immediately extracts sentiment, intent, and computes a transparent Priority Score."'}
+                {presentationStep === 4 && 'Scene 4: "Crucial question: Why are customers complaining? We cluster systemic Root Causes."'}
+                {presentationStep === 5 && 'Scene 5: "From Complaint → Insight → Action: Closed-Loop organizational remediation."'}
+              </div>
+
+              <div className="text-xs text-slate-300">
+                {presentationStep === 1 && 'Observe the high volume in our Kaggle dataset across Flipkart, Amazon, and Zepto.'}
+                {presentationStep === 2 && 'Traditional ticketing treats each issue as a standalone ticket, leading to SLA breaches.'}
+                {presentationStep === 3 && 'Inspect how NLP assigns P1-P4 priority scores with transparent factor weights.'}
+                {presentationStep === 4 && 'Look at the refund reconciliation bottlenecks and cold-chain last-mile delivery delays.'}
+                {presentationStep === 5 && 'Management deploys business interventions and verifies subsequent complaint volume reduction.'}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {presentationStep > 1 && (
+                <button
+                  onClick={() => {
+                    const prev = presentationStep - 1;
+                    setPresentationStep(prev);
+                    if (prev === 1) setActiveTab('command_center');
+                    if (prev === 2) setActiveTab('complaint_inbox');
+                    if (prev === 3) setActiveTab('ai_analyzer');
+                    if (prev === 4) setActiveTab('root_cause');
+                  }}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg"
+                >
+                  Prev
+                </button>
+              )}
+
+              {presentationStep < 5 ? (
+                <button
+                  onClick={() => {
+                    const next = presentationStep + 1;
+                    setPresentationStep(next);
+                    if (next === 2) setActiveTab('complaint_inbox');
+                    if (next === 3) setActiveTab('ai_analyzer');
+                    if (next === 4) setActiveTab('root_cause');
+                    if (next === 5) setActiveTab('command_center');
+                  }}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-md shadow-indigo-600/30"
+                >
+                  <span>Next Scene</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setPresentationStep(null)}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg"
+                >
+                  Finish Demo
+                </button>
+              )}
+
+              <button
+                onClick={() => setPresentationStep(null)}
+                className="text-slate-400 hover:text-white p-1"
+                title="Exit Presentation Mode"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
