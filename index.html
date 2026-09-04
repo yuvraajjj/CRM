@@ -1,82 +1,90 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0f172a">
-  <title>RootCause CRM — Customer Complaint AI</title>
-
-  <!-- Browser-only runtime: no npm, Vite, or build step required -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/lucide-react@0.536.0/dist/umd/lucide-react.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <style>
-    html, body, #root {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-    }
-    body {
-      overflow: hidden;
-      background: #f1f5f9;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-        "Segoe UI", sans-serif;
-    }
-    * { box-sizing: border-box; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RootCause CRM — Customer Complaint AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+  html, body, #root { height: 100%; }
+  body { margin: 0; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slide-in-from-top-4 { from { transform: translateY(-1rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes slide-in-from-right { from { transform: translateX(2rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes slide-in-from-bottom-6 { from { transform: translateY(1.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .animate-in { animation-duration: .25s; animation-fill-mode: both; }
+  .fade-in { animation-name: fade-in; }
+  .slide-in-from-top-4 { animation-name: slide-in-from-top-4; }
+  .slide-in-from-right { animation-name: slide-in-from-right; }
+  .slide-in-from-bottom-6 { animation-name: slide-in-from-bottom-6; }
+  .duration-200 { animation-duration: .2s; }
+  .duration-300 { animation-duration: .3s; }
+</style>
 </head>
 <body>
-  <div id="root">
-    <div style="height:100vh;display:flex;align-items:center;justify-content:center;
-                font-family:system-ui;color:#475569;background:#f8fafc">
-      Loading RootCause CRM…
-    </div>
-  </div>
+<div id="root"></div>
 
-  <script type="text/babel" data-presets="env,react">
-    
-const { useState, useMemo, useEffect, useRef } = React;
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom/client';
+import {
+  LayoutDashboard,
+  Inbox,
+  Cpu,
+  GitFork,
+  AlertOctagon,
+  Users,
+  BarChart3,
+  Settings,
+  Search,
+  Upload,
+  Download,
+  Play,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ArrowRight,
+  ChevronRight,
+  ChevronDown,
+  Filter,
+  RefreshCw,
+  Eye,
+  ShieldAlert,
+  Sparkles,
+  X,
+  MessageSquare,
+  Send,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+  MapPin,
+  Building2,
+  HelpCircle,
+  Check,
+  ExternalLink,
+  Info,
+  SlidersHorizontal,
+  ChevronLeft,
+  ArrowUpRight,
+  ShieldCheck,
+  Activity
+} from 'lucide-react';
 
-const _Lucide = window.LucideReact || {};
-const _iconNames = [
-  'LayoutDashboard','Inbox','Cpu','GitFork','AlertOctagon','Users','BarChart3',
-  'Settings','Search','Upload','Download','Play','CheckCircle2','AlertTriangle',
-  'Clock','ArrowRight','ChevronRight','ChevronDown','Filter','RefreshCw','Eye',
-  'ShieldAlert','Sparkles','X','MessageSquare','Send','TrendingUp','TrendingDown',
-  'Layers','MapPin','Building2','HelpCircle','Check','ExternalLink','Info',
-  'SlidersHorizontal','ChevronLeft','ArrowUpRight','ShieldCheck','Activity'
-];
-
-function _FallbackIcon(props) {
-  return React.createElement('span', {
-    ...props,
-    style: {
-      display: 'inline-block',
-      width: props?.style?.width || '1em',
-      height: props?.style?.height || '1em',
-      ...(props?.style || {})
-    },
-    'aria-hidden': true
-  });
-}
-
-_iconNames.forEach((name) => {
-  if (!_Lucide[name]) _Lucide[name] = _FallbackIcon;
-});
-
-const {
-  LayoutDashboard, Inbox, Cpu, GitFork, AlertOctagon, Users, BarChart3,
-  Settings, Search, Upload, Download, Play, CheckCircle2, AlertTriangle,
-  Clock, ArrowRight, ChevronRight, ChevronDown, Filter, RefreshCw, Eye,
-  ShieldAlert, Sparkles, X, MessageSquare, Send, TrendingUp, TrendingDown,
-  Layers, MapPin, Building2, HelpCircle, Check, ExternalLink, Info,
-  SlidersHorizontal, ChevronLeft, ArrowUpRight, ShieldCheck, Activity
-} = _Lucide;
-
-    // ==========================================
+// ==========================================
 // 1. DATA TAXONOMY & NLP INFERENCE ENGINE
 // ==========================================
 
@@ -352,19 +360,19 @@ function maskPII(name, type = 'name') {
 function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState('command_center');
-  
+
   // Data State
   const [rawDataset, setRawDataset] = useState(INITIAL_KAGGLE_SEED);
   const [isUploadedData, setIsUploadedData] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Selected Detail Modal / Drawer
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [selectedRootCause, setSelectedRootCause] = useState(null);
   const [selectedCustomerProfile, setSelectedCustomerProfile] = useState(null);
-  
+
   // Modals & Banners
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showSimulateModal, setShowSimulateModal] = useState(false);
@@ -373,7 +381,7 @@ function App() {
 
   // AI Interactive Tester Sandbox input
   const [sandboxText, setSandboxText] = useState('Ordered groceries on Zepto, delivered 2 hours late with spoiled milk. The support bot kept closing my ticket without human callback!');
-  
+
   // Ticket Status store for local interactive CRM status changes
   const [ticketStatuses, setTicketStatuses] = useState({});
 
@@ -393,7 +401,7 @@ function App() {
       const region = (row.region || 'central').toLowerCase();
       const respTime = Number(row.response_time_hours) || 24;
       const date = row.date || `2025-05-${String((index % 28) + 1).padStart(2, '0')}`;
-      
+
       const nlp = inferComplaintAttributes({
         ...row,
         review_text: text,
@@ -429,7 +437,7 @@ function App() {
     const unresolvedCount = processedData.filter((d) => d.status !== 'Resolved').length;
     const totalHours = processedData.reduce((acc, curr) => acc + curr.respTime, 0);
     const avgRespHours = (totalHours / total).toFixed(1);
-    
+
     // Group by Root Cause
     const rcMap = {};
     processedData.forEach((d) => {
@@ -581,7 +589,7 @@ function App() {
 
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-800 font-sans antialiased overflow-hidden select-none">
-      
+
       {/* ==================================================== */}
       {/* TOAST NOTIFICATION                                   */}
       {/* ==================================================== */}
@@ -692,7 +700,7 @@ function App() {
       {/* MAIN CONTENT WORKSPACE                               */}
       {/* ==================================================== */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-100">
-        
+
         {/* TOP BAR */}
         <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-4">
@@ -756,11 +764,11 @@ function App() {
 
         {/* WORKSPACE VIEW CONTAINER */}
         <div className="flex-1 overflow-y-auto p-6">
-          
+
           {/* 1. COMMAND CENTER (LANDING PAGE) */}
           {activeTab === 'command_center' && (
             <div className="space-y-6 max-w-7xl mx-auto">
-              
+
               {/* Header Hero */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
                 <div>
@@ -787,7 +795,7 @@ function App() {
                   { label: 'Negative Sentiment', val: `${metrics.negativePct}%`, note: 'High escalation risk', icon: AlertTriangle, color: 'text-rose-600', border: 'border-rose-100 bg-rose-50/20' },
                   { label: 'P1 Critical Escalations', val: metrics.p1Count, note: 'Immediate action needed', icon: AlertOctagon, color: 'text-rose-700', border: 'border-rose-200 bg-rose-50/40' },
                   { label: 'Repeat / Unresolved', val: `${metrics.repeatPct}%`, note: 'Requires supervisor SLA', icon: Clock, color: 'text-amber-600', border: 'border-amber-100 bg-amber-50/20' },
-                  { label: 'Avg Resolution Time', val: `${metrics.avgRespHours} hrs`, note: 'Benchmark: &lt;24 hrs', icon: Activity, color: 'text-blue-600', border: 'border-blue-100' },
+                  { label: 'Avg Resolution Time', val: `${metrics.avgRespHours} hrs`, note: 'Benchmark: <24 hrs', icon: Activity, color: 'text-blue-600', border: 'border-blue-100' },
                   { label: 'Root Causes Detected', val: metrics.rootCausesDetected, note: 'Actionable clusters', icon: GitFork, color: 'text-violet-600', border: 'border-violet-100 bg-violet-50/20' }
                 ].map((kpi, idx) => {
                   const Icon = kpi.icon;
@@ -808,7 +816,7 @@ function App() {
 
               {/* Main Analytics Row: Sentiment Donut + Category Breakdown */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
+
                 {/* 1. Sentiment Donut Visualization (5 Cols) */}
                 <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                   <div>
@@ -826,7 +834,7 @@ function App() {
                         <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
                           {/* Background Ring */}
                           <circle cx="18" cy="18" r="14" fill="transparent" stroke="#f1f5f9" strokeWidth="4.2" />
-                          
+
                           {/* Negative Ring (Rose) */}
                           <circle
                             cx="18"
@@ -839,7 +847,7 @@ function App() {
                             strokeDashoffset="0"
                             className="transition-all duration-700 ease-out"
                           />
-                          
+
                           {/* Neutral Ring (Amber) */}
                           <circle
                             cx="18"
@@ -974,7 +982,7 @@ function App() {
 
               {/* Second Row: Priority Matrix + AI Anomaly Spike Detection */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
+
                 {/* 3. Priority Matrix (Impact vs Urgency Scatter) (7 Cols) */}
                 <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
@@ -996,7 +1004,7 @@ function App() {
                     {/* Quadrant dividing crosshairs */}
                     <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-slate-200 border-dashed" />
                     <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-slate-200 border-dashed" />
-                    
+
                     {/* Quadrant Labels */}
                     <span className="absolute top-2 right-3 text-[10px] font-bold text-rose-600/70 uppercase">Quadrant I: Critical (High Urgency + Impact)</span>
                     <span className="absolute top-2 left-3 text-[10px] font-bold text-amber-600/70 uppercase">Quadrant II: High Urgency</span>
@@ -1410,7 +1418,7 @@ function App() {
           {/* 4. ROOT CAUSE INTELLIGENCE (MOST IMPORTANT SECTION) */}
           {activeTab === 'root_cause' && (
             <div className="space-y-6 max-w-7xl mx-auto">
-              
+
               {/* Header Title */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
@@ -1872,7 +1880,7 @@ function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
+
                 {/* Platform Concentration */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-900 mb-1">Where Are Customers Complaining?</h3>
@@ -1990,7 +1998,7 @@ function App() {
       {selectedTicket && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-200">
           <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto border-l border-slate-200 animate-in slide-in-from-right duration-300">
-            
+
             {/* Drawer Header */}
             <div>
               <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
@@ -2025,7 +2033,7 @@ function App() {
 
               {/* Drawer Content */}
               <div className="p-6 space-y-6 text-xs">
-                
+
                 {/* Full Complaint Text Box */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
@@ -2344,7 +2352,7 @@ function App() {
                 </span>
                 <span className="text-xs text-slate-400">Classroom Demo Mode</span>
               </div>
-              
+
               <div className="text-sm font-bold text-white">
                 {presentationStep === 1 && 'Scene 1: "Every day, Indian companies receive thousands of unorganized customer complaints."'}
                 {presentationStep === 2 && 'Scene 2: "Human support agents are overwhelmed trying to manually read and prioritize."'}
@@ -2419,20 +2427,7 @@ function App() {
   );
 }
 
-    // Mount only after Babel has compiled this script.
-    try {
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(<App />);
-    } catch (error) {
-      console.error('RootCause CRM failed to start:', error);
-      document.getElementById('root').innerHTML = `
-        <div style="padding:32px;font-family:system-ui;background:#fff;min-height:100vh">
-          <h1 style="color:#be123c;margin:0 0 12px">RootCause CRM failed to load</h1>
-          <p style="color:#475569">Open the browser Console to see the technical error.</p>
-          <pre style="white-space:pre-wrap;background:#f8fafc;padding:16px;border-radius:12px;color:#334155"></pre>
-        </div>`;
-      document.querySelector('#root pre').textContent = String(error?.stack || error);
-    }
-  </script>
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
 </body>
 </html>
